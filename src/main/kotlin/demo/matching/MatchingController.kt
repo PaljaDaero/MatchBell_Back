@@ -3,8 +3,9 @@ package demo.matching
 import demo.auth.JwtTokenProvider
 import demo.profile.ProfileRepository
 import demo.profile.ProfileUnlockService
+import demo.profile.ProfileViewController
+import demo.profile.ProfileViewResponse
 import demo.saju.CompatController
-import demo.saju.CompatRequest
 import org.springframework.http.HttpStatus
 import org.springframework.web.bind.annotation.*
 import org.springframework.web.server.ResponseStatusException
@@ -16,7 +17,8 @@ class MatchingController(
     private val matchingService: MatchingService,
     private val profileRepository: ProfileRepository,
     private val compatController: CompatController,
-    private val profileUnlockService: ProfileUnlockService   // 🔹 新增：主页解锁服务
+    private val profileUnlockService: ProfileUnlockService,
+    private val profileViewController: ProfileViewController   // ✅ 复用 ProfileViewController 逻辑
 ) {
 
     /**
@@ -92,61 +94,40 @@ class MatchingController(
     }
 
     /**
-     * 매칭된 상대방 프로필 조회
+     * 매칭된 상대방 프로필 조회 (통합 버전)
+     *
      * GET /me/matches/{targetUserId}/profile
-     * - 상대방이 나와 매칭된 상태여야 함
-     * - 내가 상대방의 프로필을 잠금 해제했어야 함
-     * - 궁합 정보 포함
+     *
+     * - 응답 스키마는 /profiles/{targetUserId} 와 동일하게 ProfileViewResponse 사용
+     * - 하지만 /me/matches/... 경로에서는 "반드시 매칭 상태" 를 강제:
+     *   - 매칭이 아니면 403 FORBIDDEN
+     * - 매칭 + 잠금 여부에 따라 detail, canChat, canUnlock 등의 필드는
+     *   ProfileViewController.viewProfile() 의 로직을 그대로 따름
      */
     @GetMapping("/matches/{targetUserId}/profile")
     fun getMatchedProfile(
         @RequestHeader("Authorization", required = false) authHeader: String?,
         @PathVariable targetUserId: Long
-    ): MatchProfileResponse {
-        val meUserId = extractUserIdFromHeader(authHeader)
+    ): ProfileViewResponse {
+        // 1) 먼저 공통 로직(/profiles/{targetUserId}) 호출해서 상태를 계산
+        val baseResponse = profileViewController.viewProfile(authHeader, targetUserId)
 
-        // 1) 매칭 상태 확인
-        matchingService.checkHasMatch(meUserId, targetUserId)
-
-        // 2) 프로필 잠금 해제 상태 확인
-        if (!profileUnlockService.isUnlocked(meUserId, targetUserId)) {
+        // 2) /me/matches/... 경로에서는 "매칭된 사용자만" 허용
+        //    - 자기 자신은 허용 (isSelf == true)
+        //    - 그 외 isMatched == false 이면 403
+        if (!baseResponse.isSelf && !baseResponse.isMatched) {
             throw ResponseStatusException(
-                HttpStatus.PAYMENT_REQUIRED,
-                "프로필 잠금 해제가 필요합니다."
+                HttpStatus.FORBIDDEN,
+                "매칭된 사용자만 이 경로로 프로필을 조회할 수 있습니다."
             )
         }
 
-        // 3) 상대방 프로필 조회
-        val profile = profileRepository.findByUserId(targetUserId)
-            ?: throw ResponseStatusException(
-                HttpStatus.NOT_FOUND,
-                "사용자를 찾을 수 없습니다."
-            )
-
-        // 4) 궁합 정보 조회
-        val compat = compatController.getCompatScore(
-            CompatRequest(
-                meUserId = meUserId,
-                targetUserId = targetUserId
-            )
-        )
-
-        return MatchProfileResponse(
-            userId = targetUserId,
-            nickname = profile.nickname,
-            intro = profile.intro,
-            gender = profile.gender,
-            birth = profile.birthDate,
-            region = profile.region,
-            job = profile.job,
-            avatarUrl = profile.avatarUrl,
-            tendency = profile.tendency,
-            compat = compat
-        )
+        // 3) 그대로 반환 (스키마는 /profiles 와 100% 동일)
+        return baseResponse
     }
 
     /**
-        * Authorization 헤더에서 JWT 추출 후 userId 파싱
+     * Authorization 헤더에서 JWT 추출 후 userId 파싱
      */
     private fun extractUserIdFromHeader(authHeader: String?): Long {
         if (authHeader.isNullOrBlank() || !authHeader.startsWith("Bearer ")) {

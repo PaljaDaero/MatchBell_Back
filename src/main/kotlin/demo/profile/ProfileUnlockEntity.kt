@@ -20,7 +20,9 @@ class ProfileUnlockEntity() {   // JPA 용 기본 생성자
     @GeneratedValue(strategy = GenerationType.IDENTITY)
     var id: Long? = null
 
-    // 다른 사용자의 프로필을 본 사용자
+    /**
+     *  관람자 사용자 정보
+     */
     @ManyToOne(fetch = FetchType.LAZY)
     @JoinColumn(
         name = "viewer_id",
@@ -29,7 +31,9 @@ class ProfileUnlockEntity() {   // JPA 용 기본 생성자
     )
     lateinit var viewer: UserEntity
 
-    // 본 프로필의 주인
+    /**
+     *  대상자 사용자 정보
+     */
     @ManyToOne(fetch = FetchType.LAZY)
     @JoinColumn(
         name = "target_id",
@@ -41,7 +45,7 @@ class ProfileUnlockEntity() {   // JPA 용 기본 생성자
     @Column(name = "created_at", nullable = false)
     var createdAt: LocalDateTime = LocalDateTime.now()
 
-    // 편의용 생성자 (서비스 코드에서 사용할 것)
+    //  편의 생성자
     constructor(
         viewer: UserEntity,
         target: UserEntity,
