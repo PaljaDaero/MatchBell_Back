@@ -14,11 +14,11 @@ import java.time.LocalDateTime
         )
     ]
 )
-data class UserLocationEntity(
+class UserLocationEntity {
 
     @Id
     @GeneratedValue(strategy = GenerationType.IDENTITY)
-    val id: Long = 0L,
+    var id: Long? = null
 
     @OneToOne(fetch = FetchType.LAZY)
     @JoinColumn(
@@ -27,14 +27,25 @@ data class UserLocationEntity(
         unique = true,
         foreignKey = ForeignKey(name = "fk_location_user")
     )
-    val user: UserEntity,
+    lateinit var user: UserEntity    // 사용자 위치 정보 소유자
 
     @Column(name = "lat", nullable = false)
-    val lat: Double,
+    var lat: Double = 0.0
 
     @Column(name = "lng", nullable = false)
-    val lng: Double,
+    var lng: Double = 0.0
 
     @Column(name = "updated_at", nullable = false)
-    val updatedAt: LocalDateTime = LocalDateTime.now()
-)
+    var updatedAt: LocalDateTime = LocalDateTime.now()
+
+    // JPA 용 기본 생성자
+    constructor()
+
+    // 편의 생성자
+    constructor(user: UserEntity, lat: Double, lng: Double) {
+        this.user = user
+        this.lat = lat
+        this.lng = lng
+        this.updatedAt = LocalDateTime.now()
+    }
+}

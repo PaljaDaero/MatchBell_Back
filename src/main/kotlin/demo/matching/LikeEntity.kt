@@ -18,6 +18,7 @@ import java.time.LocalDateTime
     ]
 )
 data class LikeEntity(
+
     @Id
     @GeneratedValue(strategy = GenerationType.IDENTITY)
     val id: Long = 0L,

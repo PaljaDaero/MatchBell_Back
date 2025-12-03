@@ -51,19 +51,19 @@ class CookieService(
         }
 
         val wallet = getOrCreateWallet(userId)
-        val newBalance = wallet.balance + amount
 
-        val updated = wallet.copy(
-            balance = newBalance,
-            updatedAt = LocalDateTime.now()
-        )
-        val saved = walletRepository.save(updated)
+        // ✅ copy() 대신 엔티티 필드 직접 수정
+        wallet.balance = wallet.balance + amount
+        wallet.updatedAt = LocalDateTime.now()
+
+        // @Transactional 이라면 save() 안 해도 되지만, 명시적으로 호출해도 괜찮음
+        val saved = walletRepository.save(wallet)
 
         val tx = CookieTransactionEntity(
             wallet = saved,
             type = CookieTransactionType.EARN,
             amount = amount,
-            balanceAfter = newBalance,
+            balanceAfter = saved.balance,
             reason = reason
         )
         txRepository.save(tx)
@@ -85,19 +85,17 @@ class CookieService(
             throw ResponseStatusException(HttpStatus.BAD_REQUEST, "쿠키가 부족합니다.")
         }
 
-        val newBalance = wallet.balance - amount
+        // ✅ 마찬가지로 copy() 없이 직접 수정
+        wallet.balance = wallet.balance - amount
+        wallet.updatedAt = LocalDateTime.now()
 
-        val updated = wallet.copy(
-            balance = newBalance,
-            updatedAt = LocalDateTime.now()
-        )
-        val saved = walletRepository.save(updated)
+        val saved = walletRepository.save(wallet)
 
         val tx = CookieTransactionEntity(
             wallet = saved,
             type = CookieTransactionType.SPEND,
             amount = amount,
-            balanceAfter = newBalance,
+            balanceAfter = saved.balance,
             reason = reason
         )
         txRepository.save(tx)

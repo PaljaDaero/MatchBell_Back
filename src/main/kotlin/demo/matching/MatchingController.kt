@@ -2,6 +2,7 @@ package demo.matching
 
 import demo.auth.JwtTokenProvider
 import demo.profile.ProfileRepository
+import demo.profile.ProfileUnlockService
 import demo.saju.CompatController
 import demo.saju.CompatRequest
 import org.springframework.http.HttpStatus
@@ -14,7 +15,8 @@ class MatchingController(
     private val jwtTokenProvider: JwtTokenProvider,
     private val matchingService: MatchingService,
     private val profileRepository: ProfileRepository,
-    private val compatController: CompatController
+    private val compatController: CompatController,
+    private val profileUnlockService: ProfileUnlockService   // 🔹 新增：主页解锁服务
 ) {
 
     /**
@@ -31,7 +33,8 @@ class MatchingController(
     }
 
     /**
-     * 내가 보낸 궁금해요 리스트
+     * 궁금해요 보낸 목록
+     * GET /me/curious/sent
      */
     @GetMapping("/curious/sent")
     fun getSentCurious(
@@ -42,7 +45,8 @@ class MatchingController(
     }
 
     /**
-     * 내가 받은 궁금해요 리스트
+     * 궁금해요 받은 목록
+     * GET /me/curious/received
      */
     @GetMapping("/curious/received")
     fun getReceivedCurious(
@@ -53,7 +57,8 @@ class MatchingController(
     }
 
     /**
-     * 매칭 리스트
+     * 매칭된 목록
+     * GET /me/matches
      */
     @GetMapping("/matches")
     fun getMatches(
@@ -64,8 +69,34 @@ class MatchingController(
     }
 
     /**
-     * 매칭된 상대 프로필 + 궁합 결과
+     * 프로필 잠금 해제 요청
+     * POST /me/matches/{targetUserId}/profile/unlock
+     * - 쿠키 차감 후 잠금 해제
+     * - 단방향 해제 (상대방이 내 프로필을 보기 위해서는 상대방이 별도 해제 필요)
+     */
+    @PostMapping("/matches/{targetUserId}/profile/unlock")
+    fun unlockMatchedProfile(
+        @RequestHeader("Authorization", required = false) authHeader: String?,
+        @PathVariable targetUserId: Long
+    ): ProfileUnlockResponse {
+        val meUserId = extractUserIdFromHeader(authHeader)
+
+        val result = profileUnlockService.unlockProfile(meUserId, targetUserId)
+
+        return ProfileUnlockResponse(
+            unlocked = result.unlocked,
+            alreadyUnlocked = result.alreadyUnlocked,
+            cost = result.cost,
+            balanceAfter = result.balanceAfter
+        )
+    }
+
+    /**
+     * 매칭된 상대방 프로필 조회
      * GET /me/matches/{targetUserId}/profile
+     * - 상대방이 나와 매칭된 상태여야 함
+     * - 내가 상대방의 프로필을 잠금 해제했어야 함
+     * - 궁합 정보 포함
      */
     @GetMapping("/matches/{targetUserId}/profile")
     fun getMatchedProfile(
@@ -74,16 +105,25 @@ class MatchingController(
     ): MatchProfileResponse {
         val meUserId = extractUserIdFromHeader(authHeader)
 
-        // 매칭 관계 확인 (없으면 403)
+        // 1) 매칭 상태 확인
         matchingService.checkHasMatch(meUserId, targetUserId)
 
+        // 2) 프로필 잠금 해제 상태 확인
+        if (!profileUnlockService.isUnlocked(meUserId, targetUserId)) {
+            throw ResponseStatusException(
+                HttpStatus.PAYMENT_REQUIRED,
+                "프로필 잠금 해제가 필요합니다."
+            )
+        }
+
+        // 3) 상대방 프로필 조회
         val profile = profileRepository.findByUserId(targetUserId)
             ?: throw ResponseStatusException(
                 HttpStatus.NOT_FOUND,
-                "상대 프로필을 찾을 수 없습니다."
+                "사용자를 찾을 수 없습니다."
             )
 
-        // 기존 /compat/score 로직 재사용
+        // 4) 궁합 정보 조회
         val compat = compatController.getCompatScore(
             CompatRequest(
                 meUserId = meUserId,
@@ -105,6 +145,9 @@ class MatchingController(
         )
     }
 
+    /**
+        * Authorization 헤더에서 JWT 추출 후 userId 파싱
+     */
     private fun extractUserIdFromHeader(authHeader: String?): Long {
         if (authHeader.isNullOrBlank() || !authHeader.startsWith("Bearer ")) {
             throw ResponseStatusException(

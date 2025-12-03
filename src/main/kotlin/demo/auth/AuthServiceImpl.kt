@@ -2,6 +2,7 @@ package demo.auth
 
 import demo.auth.dto.AuthResponse
 import demo.auth.dto.LoginRequest
+import demo.auth.dto.RefreshRequest
 import demo.auth.dto.SignupRequest
 import demo.auth.dto.UserResponse
 import demo.profile.Gender
@@ -108,15 +109,16 @@ class AuthServiceImpl(
             gender = request.gender,
             birthDate = parsedBirthDate,
             region = null,
-            job = request.job,          // SignupRequest 에 job 이 없으면 null 로 두면 됨
+            job = request.job,
             avatarUrl = null,
             tendency = tendencyTextForProfile
         )
         profileRepository.save(profile)
         log.info(">>> signup profile saved: userId={}, nickname={}", savedUser.id, request.nickname)
 
-        // 7) JWT 발급 + 응답 DTO 생성
-        val token = jwtTokenProvider.generateToken(savedUser.id!!)
+        // 7) Access / Refresh 토큰 발급 + 응답 DTO 생성
+        val accessToken = jwtTokenProvider.generateAccessToken(savedUser.id!!)
+        val refreshToken = jwtTokenProvider.generateRefreshToken(savedUser.id!!)
 
         val userResponse = UserResponse(
             id = savedUser.id!!,
@@ -126,7 +128,8 @@ class AuthServiceImpl(
         log.info(">>> signup success: userId={}", savedUser.id)
 
         return AuthResponse(
-            jwt = token,
+            jwt = accessToken,
+            refreshToken = refreshToken,
             user = userResponse
         )
     }
@@ -153,7 +156,8 @@ class AuthServiceImpl(
             )
         }
 
-        val token = jwtTokenProvider.generateToken(user.id!!)
+        val accessToken = jwtTokenProvider.generateAccessToken(user.id!!)
+        val refreshToken = jwtTokenProvider.generateRefreshToken(user.id!!)
 
         val userResponse = UserResponse(
             id = user.id!!,
@@ -163,7 +167,54 @@ class AuthServiceImpl(
         log.info(">>> login success: userId={}", user.id)
 
         return AuthResponse(
-            jwt = token,
+            jwt = accessToken,
+            refreshToken = refreshToken,
+            user = userResponse
+        )
+    }
+
+    /**
+     * Refresh 토큰으로 Access / Refresh 재발급
+     */
+    @Transactional(readOnly = true)
+    override fun refresh(request: RefreshRequest): AuthResponse {
+        log.info(">>> refresh token request")
+
+        val userId = jwtTokenProvider.parseUserIdFromRefreshToken(request.refreshToken)
+            ?: run {
+                log.warn(">>> refresh failed - invalid refresh token")
+                throw ResponseStatusException(
+                    HttpStatus.UNAUTHORIZED,
+                    "리프레시 토큰이 유효하지 않습니다."
+                )
+            }
+
+        val user = userRepository.findById(userId).orElseThrow {
+            log.warn(">>> refresh failed - user not found, userId={}", userId)
+            ResponseStatusException(HttpStatus.UNAUTHORIZED, "사용자를 찾을 수 없습니다.")
+        }
+
+        if (user.status != UserStatus.ACTIVE) {
+            log.warn(">>> refresh failed - user not active, userId={}", userId)
+            throw ResponseStatusException(
+                HttpStatus.UNAUTHORIZED,
+                "비활성화된 계정입니다."
+            )
+        }
+
+        val newAccessToken = jwtTokenProvider.generateAccessToken(user.id!!)
+        val newRefreshToken = jwtTokenProvider.generateRefreshToken(user.id!!) // 토큰 로테이션
+
+        val userResponse = UserResponse(
+            id = user.id!!,
+            email = user.email
+        )
+
+        log.info(">>> refresh success: userId={}", user.id)
+
+        return AuthResponse(
+            jwt = newAccessToken,
+            refreshToken = newRefreshToken,
             user = userResponse
         )
     }

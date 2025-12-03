@@ -6,11 +6,11 @@ import java.time.LocalDateTime
 
 @Entity
 @Table(name = "cookie_wallets")
-data class CookieWalletEntity(
+class CookieWalletEntity() {  // JPA 용 기본 생성자
 
     @Id
     @GeneratedValue(strategy = GenerationType.IDENTITY)
-    val id: Long = 0L,
+    var id: Long? = null       // 보통 JPA에서는 nullable 로 둠
 
     @OneToOne(fetch = FetchType.LAZY)
     @JoinColumn(
@@ -19,15 +19,26 @@ data class CookieWalletEntity(
         unique = true,
         foreignKey = ForeignKey(name = "fk_cookie_user")
     )
-    val user: UserEntity,
+    lateinit var user: UserEntity   // 늦게 채우는 필드
 
     @Column(name = "balance", nullable = false)
-    val balance: Long = 0L,
+    var balance: Long = 0L
 
     @Column(name = "updated_at", nullable = false)
-    val updatedAt: LocalDateTime = LocalDateTime.now(),
+    var updatedAt: LocalDateTime = LocalDateTime.now()
 
     // 간단한 동시성 제어용 optimistic lock
     @Version
-    val version: Long? = null
-)
+    var version: Long? = null
+
+    // 편의용 생성자 (서비스 코드에서 사용할 것)
+    constructor(
+        user: UserEntity,
+        balance: Long = 0L,
+        updatedAt: LocalDateTime = LocalDateTime.now()
+    ) : this() {
+        this.user = user
+        this.balance = balance
+        this.updatedAt = updatedAt
+    }
+}

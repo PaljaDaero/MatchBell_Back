@@ -5,12 +5,16 @@ import demo.saju.CompatResponse
 import java.time.LocalDate
 import java.time.LocalDateTime
 
+
 data class CuriousResponse(
     val status: String,   // "SENT" or "MATCHED"
     val matched: Boolean,
     val matchId: Long?
 )
 
+/**
+ * 궁금해요를 받은 사용자 요약 정보
+ */
 data class CuriousUserSummary(
     val userId: Long,
     val nickname: String,
@@ -18,6 +22,9 @@ data class CuriousUserSummary(
     val createdAt: LocalDateTime
 )
 
+/**
+ * 매칭된 사용자 요약 정보
+ */
 data class MatchSummary(
     val userId: Long,
     val nickname: String,
@@ -28,9 +35,7 @@ data class MatchSummary(
     val matchedAt: LocalDateTime
 )
 
-/**
- * 매칭된 상대 프로필 + 궁합 결과
- */
+
 data class MatchProfileResponse(
     val userId: Long,
     val nickname: String,
@@ -42,4 +47,14 @@ data class MatchProfileResponse(
     val avatarUrl: String?,
     val tendency: String?,
     val compat: CompatResponse
+)
+
+/**
+ * 프로필 잠금 해제 결과
+ */
+data class ProfileUnlockResponse(
+    val unlocked: Boolean,      
+    val alreadyUnlocked: Boolean, 
+    val cost: Long,              
+    val balanceAfter: Long?  
 )

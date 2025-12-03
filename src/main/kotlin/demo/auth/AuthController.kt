@@ -2,6 +2,7 @@ package demo.auth
 
 import demo.auth.dto.AuthResponse
 import demo.auth.dto.LoginRequest
+import demo.auth.dto.RefreshRequest
 import demo.auth.dto.SignupRequest
 import org.springframework.http.HttpStatus
 import org.springframework.http.ResponseEntity
@@ -28,6 +29,18 @@ class AuthController(
         @RequestBody req: LoginRequest
     ): ResponseEntity<AuthResponse> {
         val result = authService.login(req)
+        return ResponseEntity.ok(result)
+    }
+
+    /**
+     * POST /auth/refresh
+     * body: { "refreshToken": "..." }
+     */
+    @PostMapping("/refresh")
+    fun refresh(
+        @RequestBody req: RefreshRequest
+    ): ResponseEntity<AuthResponse> {
+        val result = authService.refresh(req)
         return ResponseEntity.ok(result)
     }
 }

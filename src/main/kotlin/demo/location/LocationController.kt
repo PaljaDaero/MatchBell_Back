@@ -38,22 +38,16 @@ class LocationController(
         // 1) 위치 정보 upsert (있으면 수정, 없으면 생성)
         val existing = userLocationRepository.findByUser(user)
 
-        val entity = if (existing == null) {
-            // 새로 생성
-            UserLocationEntity(
-                user = user,
-                lat = req.lat,
-                lng = req.lng,
-                updatedAt = LocalDateTime.now()
-            )
-        } else {
-            // data class + val → copy 로 새 인스턴스 생성
-            existing.copy(
-                lat = req.lat,
-                lng = req.lng,
-                updatedAt = LocalDateTime.now()
-            )
-        }
+        // UserLocationEntity는 이제 data class가 아니므로 copy() 대신 필드 변경 방식으로 처리
+        val entity = existing ?: UserLocationEntity(
+            user = user,
+            lat = req.lat,
+            lng = req.lng
+        )
+
+        entity.lat = req.lat
+        entity.lng = req.lng
+        entity.updatedAt = LocalDateTime.now()
 
         userLocationRepository.save(entity)
 
@@ -65,6 +59,7 @@ class LocationController(
                     "프로필을 찾을 수 없습니다."
                 )
 
+            // ProfileEntity가 data class 라면 이 copy는 그대로 사용 가능
             val updatedProfile = profile.copy(
                 region = req.region
             )

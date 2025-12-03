@@ -1,6 +1,9 @@
 package demo.matching
 
+import demo.chat.MessageEntity
+import demo.chat.MessageRepository
 import demo.profile.ProfileRepository
+import demo.user.UserEntity
 import demo.user.UserRepository
 import org.springframework.http.HttpStatus
 import org.springframework.stereotype.Service
@@ -15,13 +18,15 @@ class MatchingService(
     private val userRepository: UserRepository,
     private val likeRepository: LikeRepository,
     private val matchRepository: MatchRepository,
-    private val profileRepository: ProfileRepository
+    private val profileRepository: ProfileRepository,
+    private val messageRepository: MessageRepository        // 🔹 새로 주입
 ) {
 
     /**
      * 궁금해요 보내기
      * - 이미 ACTIVE 상태로 보냈으면 그대로 유지 (idempotent)
      * - 상대도 나에게 ACTIVE로 보냈으면 매칭 성립 → matches에 1번만 기록
+     *   + 매칭이 처음 성사될 때 자동 환영 메세지 1개 생성
      */
     @Transactional
     fun sendCurious(fromUserId: Long, toUserId: Long): CuriousResponse {
@@ -51,6 +56,7 @@ class MatchingService(
             )
         }
 
+        // 아직 ACTIVE가 아니면 새로 저장 또는 재활성화
         val like = existing?.copy(
             status = LikeStatus.ACTIVE,
             createdAt = LocalDateTime.now()
@@ -74,23 +80,58 @@ class MatchingService(
 
     /**
      * 양방향 like 가 ACTIVE 일 때 matches 테이블에 한 번만 레코드 생성
+     * + 처음 생성될 때 자동으로 웰컴 메세지 1개 생성
+     *
+     * @param fromUser  지금 궁금해요를 보낸 사람 (웰컴 메세지 발신자로 사용)
+     * @param toUser    상대방
      */
-    private fun ensureMatchExists(userA: demo.user.UserEntity, userB: demo.user.UserEntity): Long {
-        val (u1, u2) = if ((userA.id ?: 0L) <= (userB.id ?: 0L)) {
-            userA to userB
+    private fun ensureMatchExists(fromUser: UserEntity, toUser: UserEntity): Long {
+        // DB 저장 규칙: 항상 user1.id < user2.id
+        val (u1, u2) = if ((fromUser.id ?: 0L) <= (toUser.id ?: 0L)) {
+            fromUser to toUser
         } else {
-            userB to userA
+            toUser to fromUser
         }
 
         val existing = matchRepository.findByUser1AndUser2(u1, u2)
-        if (existing != null) return existing.id
+        if (existing != null) {
+            // 이미 매칭 레코드가 있으면 웰컴 메세지는 또 만들지 않음
+            return existing.id
+        }
 
-        val match = MatchEntity(
-            user1 = u1,
-            user2 = u2,
-            status = MatchStatus.ACTIVE
+        // 🔹 처음 매칭이 성사된 경우에만 match 생성
+        val match = matchRepository.save(
+            MatchEntity(
+                user1 = u1,
+                user2 = u2,
+                status = MatchStatus.ACTIVE
+            )
         )
-        return matchRepository.save(match).id
+
+        // 🔹 자동 웰컴 메세지 생성 (보낸 사람 = 지금 궁금해요를 누른 fromUser)
+        createWelcomeMessage(match, fromUser)
+
+        return match.id
+    }
+
+    /**
+     * 매칭 성사 시 자동으로 한쪽이 보낸 것처럼 보이는 웰컴 메세지 생성
+     */
+    private fun createWelcomeMessage(
+        match: MatchEntity,
+        sender: UserEntity
+    ) {
+        val welcomeText =
+            "서로 '궁금해요'를 눌러 매칭이 성사되었습니다. 가볍게 인사를 나눠보세요 😊"
+
+        val msg = MessageEntity(
+            match = match,
+            sender = sender,       // 실제 유저가 보낸 것처럼 처리
+            content = welcomeText
+            // sentAt, status 는 기본값(LocalDateTime.now(), SENT) 사용
+        )
+
+        messageRepository.save(msg)
     }
 
     /**
