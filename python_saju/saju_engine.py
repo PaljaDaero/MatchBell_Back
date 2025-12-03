@@ -1348,21 +1348,17 @@ if __name__ == "__main__":
 
 def _get_open_api_key() -> str:
     """
-    获取农历转换 API 密钥：
-
-    优先顺序：
-    1) 环境变量 SAJU_OPEN_API_KEY
-    2) 如果原始代码中定义了 open_api_key 变量，则使用它
-    3) 否则报错
+    보조 함수: open_api_key 값을 가져옵니다.
+    반환값: open_api_key 문자열
     """
-    # 1) 环境变量优先
+    # 1) 환경 변수에서 가져오기
     env_key = os.getenv("SAJU_OPEN_API_KEY")
     if env_key:
         return env_key
 
-    # 2) 尝试使用原始代码里的 open_api_key（如果存在）
+    # 2) 원래 코드에서 가져오기
     try:
-        from __main__ import open_api_key  # 在某些运行方式下
+        from __main__ import open_api_key  # type: ignore[attr-defined]
         return open_api_key
     except ImportError:
         pass
@@ -1370,28 +1366,28 @@ def _get_open_api_key() -> str:
         pass
 
     try:
-        # 如果原始代码就在本模块中
+        # 글로벌 네임스페이스에서 직접 접근 시도
         return globals()["open_api_key"]
     except KeyError:
         pass
 
     raise RuntimeError(
-        "open_api_key 未配置。请在环境变量 SAJU_OPEN_API_KEY 中设置，"
-        "或在原始算法代码中定义 open_api_key 变量。"
+        "open_api_key 값을 찾을 수 없습니다. "
+        "환경 변수 'SAJU_OPEN_API_KEY' 를 설정하거나, "
     )
 
 
 def get_birth_from_date(year: int, month: int, day: int):
     """
-    使用原始 getCalendar + 天干地支映射，只传入公历年份/月份/日期，
-    不需要出生时间（固定用 12:00）。
-
-    返回值格式与原始 get_birth() 一致：
-        [ys, ye, ms, me, day_sky, day_earth]
+    주어진 양력 생년월일로부터 6개의 간지 토큰을 계산합니다.
+    반환값: [년간, 년지, 월간, 월지, 일간, 일지] 의 리스트
+        year: 태어난 연도 (예: 1990)
+        month: 태어난 월 (1~12)
+        day: 태어난 일 (1~31)
     """
-    # 这里假设原始代码中已经定义了:
+    # 가정 - 아래 함수 및 변수들이 이미 정의되어 있음:
     #   - getCalendar(year, month, day, hour, minute)
-    #   - sky / earth 字典
+    #   - sky / earth 딕셔너리
     api_key = _get_open_api_key()
 
     year_str = str(year)
@@ -1409,9 +1405,9 @@ def get_birth_from_date(year: int, month: int, day: int):
     response.raise_for_status()
     root = ET.fromstring(response.text)
 
-    # 原始代码里是 root[1][0][0][1].text（例如 "갑자"）
+    # 원래 코드와 동일하게 음력 일간/지 정보 추출
     day0 = root[1][0][0][1].text
-    # 使用中午 12:00（与原代码一致）
+    # 원래 코드와 동일하게 연간/지, 월간/지 계산
     ys, ye, ms, me = getCalendar(year_str, month_str, day_str, 12, 0)  # type: ignore[name-defined]
 
     saju = [
@@ -1429,50 +1425,53 @@ def run_match(
     year0: int,
     month0: int,
     day0: int,
-    gender0: int,  # 1 = 男, 0 = 女 （保持与原始代码一致）
+    gender0: int,  # 1: 남자, 0: 여자
     year1: int,
     month1: int,
     day1: int,
     gender1: int,
 ):
     """
-    使用原始 Python 代码直接计算两个人的 궁합分数。
+    두 사람의 생년월일과 성별을 받아 궁합 점수를 계산합니다.
 
-    返回一个 dict，包含：
-        - originalScore
-        - finalScore
-        - stressScore
-        - sal0, sal1
-        - person0, person1（6个干支 token）
+    반환값: {
+        "originalScore": float, # 원래 점수
+        "finalScore": float,    # 최종 점수
+        "stressScore": float,   # 스트레스 점수
+        "sal0": List[float],    # 첫번째 사람의 살 리스트
+        "sal1": List[float],    # 두번째 사람의 살 리스트
+        "person0": List[int],   # 첫번째 사람의 6개 토큰
+        "person1": List[int],   # 두번째 사람의 6개 토큰
+        }
     """
 
 
-    # 1) 按日期计算两个人的 6 个 token（年干/支, 月干/支, 日干/支）
+    # 1) 각 사람의 6개 토큰 계산
     person0 = get_birth_from_date(year0, month0, day0)
     person1 = get_birth_from_date(year1, month1, day1)
 
-    # 2) 使用原始 Python 里的 calculate_sky / calculate_earth 计算各项
+    # 2) 원래 코드와 동일하게 하늘/땅 점수 계산
     ys = calculate_sky(person0[0], person1[0])  # type: ignore[name-defined]
-    ms = calculate_sky(person0[2], person1[2])  # 未用在最终分数里，但保留以防之后使用
+    ms = calculate_sky(person0[2], person1[2])  # 최종 사용 안 함
     ds = calculate_sky(person0[4], person1[4])
 
     ye = calculate_earth(person0[1], person1[1])  # type: ignore[name-defined]
     me = calculate_earth(person0[3], person1[3])
     de = calculate_earth(person0[5], person1[5])
 
-    # 3) 与原始代码一致的初始得分公式
+    # 3) 원래 코드와 동일하게 기본 점수 계산
     score = (0.6 * ys) + (4.5 * ds) + (1.0 * ye) + (1.5 * me) + (4.5 * de)
     org_score = float(score.item())
 
-    # 4) 调用原始 calculate(...)，应用所有 살 / 가중치 调整
+    # 4) 원래 코드와 동일하게 최종 점수 및 살 계산
     score, sal0, sal1 = calculate(   # type: ignore[name-defined]
         person0, person1, gender0, gender1, score
     )
 
-    # 原始代码里 score 是 numpy 类型，这里转成 float
+    # float 변환
     final_score = float(score)
 
-    # 5) 根据原始逻辑计算 stress
+    # 5) 스트레스 점수 계산
     if sum(sal0) > 0 and sum(sal1) > 0:
         stress = 0.5 * (106 - org_score) + (org_score - final_score) * 1.8
     else:
@@ -1480,7 +1479,7 @@ def run_match(
 
     stress_score = float(stress)
 
-    # 6) 返回结构化结果（给 Kotlin / 前端用）
+    # 6) 결과 반환
     result = {
         "originalScore": org_score,
         "finalScore": final_score,

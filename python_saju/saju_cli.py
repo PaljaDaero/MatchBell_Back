@@ -1,14 +1,14 @@
 # saju_cli.py
 # =============================================================================
-# 命令行入口：从 stdin 读取 JSON，调用 saju_engine.run_match，然后把结果 JSON 打到 stdout
+# Saju 궁합 엔진의 커맨드라인 인터페이스
 #
-# 预期输入 JSON 格式：
+# JSON：
 # {
 #   "person0": { "year": 2000, "month": 1, "day": 1, "gender": 1 },
 #   "person1": { "year": 2001, "month": 2, "day": 3, "gender": 0 }
 # }
 #
-# 输出：
+# 응답：
 # {
 #   "originalScore": ...,
 #   "finalScore": ...,
@@ -26,7 +26,7 @@ from saju_engine import run_match
 
 
 def main():
-    # 从 stdin 读取完整输入
+    # 표준 입력에서 JSON 읽기
     raw = sys.stdin.read().strip()
     if not raw:
         print(json.dumps({"error": "empty input"}), flush=True)
@@ -68,7 +68,7 @@ def main():
             gender1=gender1,
         )
     except Exception as e:
-        # 把错误信息简单返回，方便调试；上线时可以改成更友好的信息
+        # 실행 중 오류 처리
         print(json.dumps({"error": str(e)}), flush=True)
         return
 
