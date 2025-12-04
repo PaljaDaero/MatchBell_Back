@@ -101,7 +101,7 @@ class MatchingController(
      * - 응답 스키마는 /profiles/{targetUserId} 와 동일하게 ProfileViewResponse 사용
      * - 하지만 /me/matches/... 경로에서는 "반드시 매칭 상태" 를 강제:
      *   - 매칭이 아니면 403 FORBIDDEN
-     * - 매칭 + 잠금 여부에 따라 detail, canChat, canUnlock 등의 필드는
+     * - 매칭 + 잠금 여부에 따라 canChat, canUnlock 등의 필드는
      *   ProfileViewController.viewProfile() 의 로직을 그대로 따름
      */
     @GetMapping("/matches/{targetUserId}/profile")

@@ -23,10 +23,6 @@ class ProfileViewController(
     private val compatController: CompatController
 ) {
 
-    /**
-        * 查看用户主页
-    * GET /profiles/{targetUserId}
-     */
     @GetMapping("/{targetUserId}")
     fun viewProfile(
         @RequestHeader("Authorization", required = false) authHeader: String?,
@@ -42,28 +38,27 @@ class ProfileViewController(
 
         val age = calculateAge(profile.birthDate)
 
-        val basic = BasicProfileInfo(
+        // --- 공통 프로필 데이터: 어떤 상황에서도 그대로 내려감 ---
+        var basic = BasicProfileInfo(
             userId = targetUserId,
             nickname = profile.nickname,
             age = age,
             region = profile.region,
             avatarUrl = profile.avatarUrl,
-            shortIntro = profile.intro?.take(40), 
-            tendency = profile.tendency
+            shortIntro = profile.intro?.take(40),
+            tendency = profile.tendency,
+            gender = profile.gender,
+            birth = profile.birthDate,
+            job = profile.job,
+            intro = profile.intro,
+            compat = null          // 기본은 null, 필요하면 아래에서 채움
         )
 
-        // 1. 자신의 프로필 
+        // 1. 내 프로필
         if (meUserId == targetUserId) {
-            val detail = DetailProfileInfo(
-                gender = profile.gender,
-                birth = profile.birthDate,
-                job = profile.job,
-                intro = profile.intro,
-                compat = null      
-            )
+            // 내 프로필은 잠금 개념 없다고 보고 hasUnlocked = true 고정
             return ProfileViewResponse(
                 basic = basic,
-                detail = detail,
                 isSelf = true,
                 isMatched = false,
                 hasUnlocked = true,
@@ -72,7 +67,7 @@ class ProfileViewController(
             )
         }
 
-        // 2. 다른 사람의 프로필 → 매칭 여부 확인
+        // 2. 다른 유저: 매칭 여부 확인
         val me = userRepository.findById(meUserId).orElseThrow {
             ResponseStatusException(HttpStatus.NOT_FOUND, "사용자 정보를 찾을 수 없습니다.")
         }
@@ -86,59 +81,37 @@ class ProfileViewController(
         val match = matchRepository.findByUser1AndUser2(u1, u2)
         val isMatched = (match != null && match.status == MatchStatus.ACTIVE)
 
-        // 매칭이 안 된 경우 → basic 만 반환
-        if (!isMatched) {
-            return ProfileViewResponse(
-                basic = basic,
-                detail = null,
-                isSelf = false,
-                isMatched = false,
-                hasUnlocked = false,
-                canChat = false,
-                canUnlock = false
-            )
+        // 매칭 여부랑 상관없이 basic 은 그대로 내려감 (여기가 핵심!)
+        var hasUnlocked = false
+        var canChat = false
+        var canUnlock = false
+
+        if (isMatched) {
+            canChat = true
+
+            // 백엔드는 그냥 “현재 해제 여부”만 알려줌 (UI는 프론트가 조절)
+            hasUnlocked = profileUnlockService.isUnlocked(meUserId, targetUserId)
+            canUnlock = !hasUnlocked
+
+            // 궁합은 매칭 + 해제된 상태에서만 계산하고 basic.compat 에 넣기
+            if (hasUnlocked) {
+                val compat = compatController.getCompatScore(
+                    CompatRequest(
+                        meUserId = meUserId,
+                        targetUserId = targetUserId
+                    )
+                )
+                basic = basic.copy(compat = compat)
+            }
         }
-
-        // 3. 매칭 + 잠금 해제 여부 확인
-        val hasUnlocked = profileUnlockService.isUnlocked(meUserId, targetUserId)
-
-        if (!hasUnlocked) {
-            // 매칭됨 + 잠금 해제 안 됨 → detail 없음
-            return ProfileViewResponse(
-                basic = basic,
-                detail = null,
-                isSelf = false,
-                isMatched = true,
-                hasUnlocked = false,
-                canChat = true,
-                canUnlock = true
-            )
-        }
-
-        // 4. 매칭 + 잠금 해제 됨 → detail 반환
-        val compat = compatController.getCompatScore(
-            CompatRequest(
-                meUserId = meUserId,
-                targetUserId = targetUserId
-            )
-        )
-
-        val detail = DetailProfileInfo(
-            gender = profile.gender,
-            birth = profile.birthDate,
-            job = profile.job,
-            intro = profile.intro,
-            compat = compat
-        )
 
         return ProfileViewResponse(
             basic = basic,
-            detail = detail,
             isSelf = false,
-            isMatched = true,
-            hasUnlocked = true,
-            canChat = true,
-            canUnlock = false
+            isMatched = isMatched,
+            hasUnlocked = hasUnlocked,
+            canChat = canChat,
+            canUnlock = canUnlock
         )
     }
 
