@@ -18,7 +18,7 @@ class MatchingController(
     private val profileRepository: ProfileRepository,
     private val compatController: CompatController,
     private val profileUnlockService: ProfileUnlockService,
-    private val profileViewController: ProfileViewController   // ✅ 复用 ProfileViewController 逻辑
+    private val profileViewController: ProfileViewController   // ✅ 프로필 조회 로직 재사용
 ) {
 
     /**
@@ -75,6 +75,9 @@ class MatchingController(
      * POST /me/matches/{targetUserId}/profile/unlock
      * - 쿠키 차감 후 잠금 해제
      * - 단방향 해제 (상대방이 내 프로필을 보기 위해서는 상대방이 별도 해제 필요)
+     *
+     * ⚠️ 지금은 "데이터 숨기기"는 프론트에서만 처리하지만,
+     *    쿠키 차감/해제 기록은 여전히 서버에서 관리 가능 (원하면 나중에 삭제해도 됨)
      */
     @PostMapping("/matches/{targetUserId}/profile/unlock")
     fun unlockMatchedProfile(
@@ -94,36 +97,28 @@ class MatchingController(
     }
 
     /**
-     * 매칭된 상대방 프로필 조회 (통합 버전)
+     * 매칭된 상대방 프로필 조회
      *
      * GET /me/matches/{targetUserId}/profile
      *
      * - 응답 스키마는 /profiles/{targetUserId} 와 동일하게 ProfileViewResponse 사용
-     * - 하지만 /me/matches/... 경로에서는 "반드시 매칭 상태" 를 강제:
+     * - 이 경로에서는 "반드시 매칭된 상태" 를 강제:
      *   - 매칭이 아니면 403 FORBIDDEN
-     * - 매칭 + 잠금 여부에 따라 canChat, canUnlock 등의 필드는
-     *   ProfileViewController.viewProfile() 의 로직을 그대로 따름
+     * - 잠금/해제 여부에 따른 데이터 가리기는 프론트에서만 처리
      */
     @GetMapping("/matches/{targetUserId}/profile")
     fun getMatchedProfile(
         @RequestHeader("Authorization", required = false) authHeader: String?,
         @PathVariable targetUserId: Long
     ): ProfileViewResponse {
-        // 1) 먼저 공통 로직(/profiles/{targetUserId}) 호출해서 상태를 계산
-        val baseResponse = profileViewController.viewProfile(authHeader, targetUserId)
+        val meUserId = extractUserIdFromHeader(authHeader)
 
-        // 2) /me/matches/... 경로에서는 "매칭된 사용자만" 허용
-        //    - 자기 자신은 허용 (isSelf == true)
-        //    - 그 외 isMatched == false 이면 403
-        if (!baseResponse.isSelf && !baseResponse.isMatched) {
-            throw ResponseStatusException(
-                HttpStatus.FORBIDDEN,
-                "매칭된 사용자만 이 경로로 프로필을 조회할 수 있습니다."
-            )
-        }
+        // 1) 이 경로로 접근하는 경우에는 "반드시 ACTIVE 매칭" 이 있어야 함
+        //    - 매칭이 없거나 종료되었으면 403
+        matchingService.checkHasMatch(meUserId, targetUserId)
 
-        // 3) 그대로 반환 (스키마는 /profiles 와 100% 동일)
-        return baseResponse
+        // 2) 실제 프로필/궁합 조회는 공통 로직을 그대로 사용
+        return profileViewController.viewProfile(authHeader, targetUserId)
     }
 
     /**
