@@ -1,8 +1,6 @@
 package demo.profile
 
 import demo.auth.JwtTokenProvider
-import demo.matching.MatchRepository
-import demo.matching.MatchStatus
 import demo.saju.CompatController
 import demo.saju.CompatRequest
 import demo.user.UserRepository
@@ -10,7 +8,6 @@ import org.springframework.http.HttpStatus
 import org.springframework.web.bind.annotation.*
 import org.springframework.web.server.ResponseStatusException
 import java.time.LocalDate
-import java.time.Period
 
 @RestController
 @RequestMapping("/profiles")
@@ -18,11 +15,26 @@ class ProfileViewController(
     private val jwtTokenProvider: JwtTokenProvider,
     private val profileRepository: ProfileRepository,
     private val userRepository: UserRepository,
-    private val matchRepository: MatchRepository,
-    private val profileUnlockService: ProfileUnlockService,
     private val compatController: CompatController
 ) {
 
+    /**
+     * 프로필 상세 조회 (잠금/해제 로직 완전히 제거, 모든 유저 쌍에 대해 궁합 계산)
+     *
+     * GET /profiles/{targetUserId}
+     *
+     * - 헤더: Authorization: Bearer <JWT>
+     * - 응답: ProfileViewResponse (플랫 구조)
+     *
+     * 동작:
+     *  - 항상 targetUserId 의 프로필 정보를 그대로 내려줌
+     *  - meUserId != targetUserId 인 경우:
+     *      → meUserId 와 targetUserId 의 궁합 점수 계산해서 compat 에 넣어줌
+     *  - meUserId == targetUserId 인 경우:
+     *      → compat = null (원하면 자기자신 기준으로도 계산하도록 바꿀 수 있음)
+     *  - “해제/잠금 여부” 는 서버에서 일절 관리하지 않음.
+     *    프론트가 이 데이터를 바탕으로 자체 unlock 로직으로 필드 숨김/blur 처리.
+     */
     @GetMapping("/{targetUserId}")
     fun viewProfile(
         @RequestHeader("Authorization", required = false) authHeader: String?,
@@ -30,94 +42,50 @@ class ProfileViewController(
     ): ProfileViewResponse {
         val meUserId = extractUserIdFromHeader(authHeader)
 
+        // 프로필 존재 확인
         val profile = profileRepository.findByUserId(targetUserId)
             ?: throw ResponseStatusException(
                 HttpStatus.NOT_FOUND,
                 "프로필을 찾을 수 없습니다."
             )
 
-        val age = calculateAge(profile.birthDate)
-
-        // --- 공통 프로필 데이터: 어떤 상황에서도 그대로 내려감 ---
-        var basic = BasicProfileInfo(
-            userId = targetUserId,
-            nickname = profile.nickname,
-            age = age,
-            region = profile.region,
-            avatarUrl = profile.avatarUrl,
-            shortIntro = profile.intro?.take(40),
-            tendency = profile.tendency,
-            gender = profile.gender,
-            birth = profile.birthDate,
-            job = profile.job,
-            intro = profile.intro,
-            compat = null          // 기본은 null, 필요하면 아래에서 채움
-        )
-
-        // 1. 내 프로필
-        if (meUserId == targetUserId) {
-            // 내 프로필은 잠금 개념 없다고 보고 hasUnlocked = true 고정
-            return ProfileViewResponse(
-                basic = basic,
-                isSelf = true,
-                isMatched = false,
-                hasUnlocked = true,
-                canChat = false,
-                canUnlock = false
-            )
-        }
-
-        // 2. 다른 유저: 매칭 여부 확인
-        val me = userRepository.findById(meUserId).orElseThrow {
+        // (선택) 유저 존재 확인 – user 테이블에 꼭 있어야 한다면 유지
+        userRepository.findById(meUserId).orElseThrow {
             ResponseStatusException(HttpStatus.NOT_FOUND, "사용자 정보를 찾을 수 없습니다.")
         }
-        val target = userRepository.findById(targetUserId).orElseThrow {
-            ResponseStatusException(HttpStatus.NOT_FOUND, "사용자 정보를 찾을 수 없습니다.")
+        userRepository.findById(targetUserId).orElseThrow {
+            ResponseStatusException(HttpStatus.NOT_FOUND, "상대 사용자 정보를 찾을 수 없습니다.")
         }
 
-        val (u1, u2) =
-            if ((me.id ?: 0L) <= (target.id ?: 0L)) me to target else target to me
-
-        val match = matchRepository.findByUser1AndUser2(u1, u2)
-        val isMatched = (match != null && match.status == MatchStatus.ACTIVE)
-
-        // 매칭 여부랑 상관없이 basic 은 그대로 내려감 (여기가 핵심!)
-        var hasUnlocked = false
-        var canChat = false
-        var canUnlock = false
-
-        if (isMatched) {
-            canChat = true
-
-            // 백엔드는 그냥 “현재 해제 여부”만 알려줌 (UI는 프론트가 조절)
-            hasUnlocked = profileUnlockService.isUnlocked(meUserId, targetUserId)
-            canUnlock = !hasUnlocked
-
-            // 궁합은 매칭 + 해제된 상태에서만 계산하고 basic.compat 에 넣기
-            if (hasUnlocked) {
-                val compat = compatController.getCompatScore(
-                    CompatRequest(
-                        meUserId = meUserId,
-                        targetUserId = targetUserId
-                    )
+        // 🔹 궁합 점수 계산: "모든 유저 쌍"에 대해 계산 (자기 자신만 예외로 둘지 여부는 정책)
+        val compat = if (meUserId != targetUserId) {
+            compatController.getCompatScore(
+                CompatRequest(
+                    meUserId = meUserId,
+                    targetUserId = targetUserId
                 )
-                basic = basic.copy(compat = compat)
-            }
+            )
+        } else {
+            null   // 자기 자신 프로필에서는 굳이 궁합을 계산하지 않음
         }
 
         return ProfileViewResponse(
-            basic = basic,
-            isSelf = false,
-            isMatched = isMatched,
-            hasUnlocked = hasUnlocked,
-            canChat = canChat,
-            canUnlock = canUnlock
+            userId = targetUserId,
+            nickname = profile.nickname,
+            intro = profile.intro,
+            gender = profile.gender,
+            birth = profile.birthDate,
+            region = profile.region,
+            job = profile.job,
+            avatarUrl = profile.avatarUrl,
+            tendency = profile.tendency,
+            compat = compat
         )
     }
 
-    private fun calculateAge(birth: LocalDate): Int =
-        Period.between(birth, LocalDate.now()).years
-
+    /**
+     * Authorization 헤더에서 Bearer 토큰 추출 후 userId 파싱
+     */
     private fun extractUserIdFromHeader(authHeader: String?): Long {
         if (authHeader.isNullOrBlank() || !authHeader.startsWith("Bearer ")) {
             throw ResponseStatusException(

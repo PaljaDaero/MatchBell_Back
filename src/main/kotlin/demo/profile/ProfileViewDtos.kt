@@ -1,37 +1,44 @@
 package demo.profile
 
-import demo.profile.Gender
 import demo.saju.CompatResponse
 import java.time.LocalDate
 
 /**
- * 이제 basic 안에 모든 정보가 들어감.
- * - 프론트가 isSelf / isMatched / hasUnlocked 에 따라
- *   어떤 필드를 보여줄지/가릴지만 결정.
+ * 프로필 상세 조회 응답 (완전 플랫 구조, 잠금/해제 서버 로직 제거)
+ *
+ * 예시 JSON:
+ * {
+ *   "userId": 2,
+ *   "nickname": "테스트2",
+ *   "intro": "게임 좋아합니다.",
+ *   "gender": "MALE",
+ *   "birth": "1998-11-03",
+ *   "region": "서울시 마포구",
+ *   "job": "개발자",
+ *   "avatarUrl": "https://cdn.example.com/profile/2.png",
+ *   "tendency": "열정 에너지 / 책임감 의리",
+ *   "compat": {
+ *     "originalScore": 78.79902648925781,
+ *     "finalScore": 78.79902648925781,
+ *     "stressScore": 13.600486755371094,
+ *     "sal0": [...],
+ *     "sal1": [...],
+ *     "person0": [6,2,3,3,1,1],
+ *     "person1": [5,1,1,3,1,3],
+ *     "tendency0": ["열정 에너지 예술 중독"],
+ *     "tendency1": ["책임감 의리 완벽 자존심 인내"]
+ *   }
+ * }
  */
-data class BasicProfileInfo(
+data class ProfileViewResponse(
     val userId: Long,
     val nickname: String,
-    val age: Int,
-    val region: String?,
-    val avatarUrl: String?,
-    val shortIntro: String?,      // 40자 요약
-    val tendency: String?,        // 성향
-
-    // 원래 detail 에 있던 것들
+    val intro: String?,
     val gender: Gender,
     val birth: LocalDate,
+    val region: String?,
     val job: String?,
-    val intro: String?,           // 전체 자기소개
-    val compat: CompatResponse?   // 궁합 점수 (매칭 여부에 따라 넣을지 말지만 판단)
-)
-
-data class ProfileViewResponse(
-    val basic: BasicProfileInfo,
-
-    val isSelf: Boolean,
-    val isMatched: Boolean,
-    val hasUnlocked: Boolean,   // 프론트가 “해제됨” UI 보여줄지 참고용
-    val canChat: Boolean,
-    val canUnlock: Boolean
+    val avatarUrl: String?,
+    val tendency: String?,
+    val compat: CompatResponse?   // 자기 자신일 때는 null, 그 외엔 항상 계산해서 내려줌
 )
